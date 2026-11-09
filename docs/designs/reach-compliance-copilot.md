@@ -1,31 +1,40 @@
-# Design — REACH Compliance Copilot POC
+# Design — REACH Compliance Copilot POC (v2, post-Goldfish)
 
-*EGM design draft. Elephant: pi session (Nov 10). Supersedes nothing; the
-use-case docs in `docs/0*.md` remain the marketing narrative. This document is
-the build specification. Status: DRAFT — pending Goldfish review.*
+*EGM design draft v2. Elephant: pi session (Nov 10). Revised after 4-way
+Goldfish review (docs/designs/review/). Status: DRAFT v2 — pending user
+sign-off on §10 decisions, then ready to build.*
 
 ## 1. Purpose and success criteria
 
 Build a working end-to-end REACH compliance check that proves, with numbers:
 
 - a fine-tuned Qwen3 4B on a 6GB card resolves substance names to canonical
-  IDs and classifies obligations at accuracy within a small, stated margin of
-  a cloud big LLM,
-- at a measurable fraction of the cloud cost and latency,
-- with the deterministic parts (list lookup, threshold math, report) exact and
-  citable.
+  EC numbers at **≥90% exact-match accuracy on a human-verified held-out set
+  (n=200), within 5 points of the named cloud reference model on the same
+  set**, with 95% confidence intervals reported for both,
+- at a measurable fraction of the cloud cost and latency (methodology in §7),
+- with the deterministic parts (list lookup, threshold rules, report) exact,
+  unit-tested, and citable.
 
-Success = the eval table exists and is honest, the demo BOM produces a correct
-cited report, and the repo is reproducible from a clean clone.
+The claim, stated once and used everywhere (README, post, video):
 
-Explicit non-goals for the POC:
+> "The 4B resolves substance names. Python computes the obligations. The
+> eval proves the resolution number."
 
-- no web UI (CLI + report file is the interface)
-- no arbitrary messy real-world BOMs (curated demo BOM; resolution
-  pre-verified)
-- no full Annex XVII condition engine (see §6)
-- no multi-product portfolio monitoring in the demo (the "continuous
-  monitoring" story is told with a list-diff script, not a service)
+Obligation classification by the model is OUT of scope (was Task B; see §3).
+
+Success = the eval table exists with the bar above met (or the claim is
+shrunk per §7.4), the demo BOM produces a correct cited report, and a clean
+clone runs the demo (§8.3).
+
+Non-goals:
+
+- no web UI (CLI + report file)
+- no arbitrary messy real-world BOMs (curated demo BOM)
+- no Annex XVII condition engine (flag + quote; §6)
+- no registration-tier reasoning (dropped — §3.3)
+- no model-based obligation labels (dropped — §3)
+- no portfolio monitoring service (a list-diff script tells that story — §9 step 7)
 
 ## 2. Pipeline
 
@@ -33,111 +42,205 @@ Explicit non-goals for the POC:
 bom.csv (name, conc_pct, volume_t, use)
    │
    ▼
-[1] resolve.py      4B: name → {ec_no, cas_no, confidence}
-   │                 low confidence → status "needs_review", skip to report
+[1] resolve.py      4B: name → {ec_no, cas_no, canonical_name, confidence}
+   │                 confidence low → status "needs_review", row skipped to report
+   │                 EC/CAS not in reach.db → "needs_review"
    ▼
-[2] check.py        SQLite lookup: SVHC / Annex XIV / Annex XVII / (C&L)
-   │                 by EC/CAS → list hits + entry metadata
+[2] check.py        SQLite lookup by EC/CAS: SVHC / Annex XIV / Annex XVII
+   │                 → list hits + entry metadata (entry id, dates)
    ▼
-[3] obligations.py  deterministic threshold rules:
-   │                 SVHC: conc > 0.1% in article → communication duty
-   │                 registration tiers: 1t / 10t / 100t by volume
-   │                 Annex XIV: any use → authorisation required
-   │                 Annex XVII: entry matched → flag + condition text
+[3] obligations.py  deterministic rules (§3.3 table) → obligation labels
    ▼
-[4] (4B, optional) obligation label refinement / plain-language summary line
-   ▼
-[5] report.py       Markdown + JSON report: per-substance findings,
-                    citations (list, entry ID, date), needs_review section,
-                    summary counts
+[4] report.py       Markdown + JSON report: per-substance findings,
+                    citations, needs_review section, summary counts,
+                    plain-language summary lines (template, not model)
 ```
 
-Steps 2, 3, 5 are pure Python + SQLite. Step 1 (and optionally 4) call the
-local llama-server. The pipeline runs as a single CLI command:
-`python -m reach check bom.csv --db data/reach.db --model http://127.0.0.1:8080`.
+Steps 2–4 are pure Python + SQLite. Step 1 calls the local llama-server.
+CLI: `python -m reach check bom.csv --db data/reach.db
+--model http://127.0.0.1:8080 --out report.md` (after `pip install -e .`).
+`--resolver stub` reads a parallel `bom_ids.csv` of pre-verified IDs
+(build-order step 1 uses this).
 
-## 3. The two fine-tune tasks
+Model-down behavior: connection failure → one retry → all rows
+`needs_review`, report still generated, exit code 2.
 
-Task A — ID resolution:
-- input: substance name as it appears in a BOM (synonyms, trade-adjacent
-  names, minor noise)
+BOM CSV contract: header `name,conc_pct,volume_t,use`; `use` ∈
+{article, mixture, substance}; missing conc_pct allowed only for
+`use=substance`; units fixed (percent, tonnes/year of the product).
+
+## 3. The fine-tune task (one task, one adapter)
+
+### 3.1 Task A — ID resolution (the only fine-tune task in the POC)
+
+- input: substance name as it appears in a BOM (synonyms, minor noise)
 - output: JSON `{ec_no, cas_no, canonical_name, confidence: high|medium|low}`
-- training labels: generated by a cloud big LLM from (name → PubChem/ECHA
-  identity) pairs, then validated: the emitted EC/CAS must exist in the ECHA
-  data or PubChem; invalid labels dropped
-- eval: held-out name set; exact-match on EC number; abstention counted
-  correctly (predicted low-confidence on genuinely ambiguous names = correct)
+  — schema-enforced at inference (llama-server structured output / grammar);
+  malformed JSON → one retry → `needs_review`
+- confidence policy (locked): **low → needs_review; medium/high → answer**.
+  Training data includes abstention examples: names with >1 plausible
+  EC/CAS match in ECHA data are labeled `null` + `low`, minimum 10% of the
+  training mix
+- calibration metric (eval): per-band accuracy table — of items the model
+  labeled low, what fraction were genuinely ambiguous; of items it answered,
+  what fraction were correct
 
-Task B — obligation classification:
-- input: (substance, list hits, conc_pct, volume_t, use context)
-- output: JSON obligation labels (e.g. `svhc_communication`,
-  `authorisation_required`, `restriction_flagged`, `registration_tier_10t`,
-  `no_action`)
-- this task is mostly deterministic — the 4B version exists to (a) produce
-  the plain-language summary line and (b) be the thing we fine-tune and eval;
-  the deterministic rules in step 3 are the source of truth and the report
-  cites them, not the model
-- if the model and the rules disagree, the rules win and the disagreement is
-  logged (this is an eval signal, not a runtime branch)
+### 3.2 Training data
+
+- name sources: ECHA synonym columns + PubChem synonyms, with a stated noise
+  model (typo injection rate, casing, "EC-number-in-name" variants)
+- teacher: the named cloud model (§10 D1) generates labels
+- validation: emitted EC/CAS must exist in ECHA data or PubChem (existence
+  gate) PLUS a human spot-check of 10% of labels; measured label accuracy is
+  reported in the README
+- split rule: **split first, generate second** — the 200-name held-out set
+  is reserved and human-verified before any generation; dedup key is
+  canonical EC number (no synonym of a held-out substance may appear in
+  training)
+- target: 2–5K examples
+
+### 3.3 Deterministic rules (the source of truth)
+
+| Rule | Condition | Label |
+|---|---|---|
+| SVHC communication | `use=article` AND conc_pct > 0.1 (strictly greater) | `svhc_communication` |
+| SVHC monitoring | `use=article` AND conc_pct ≤ 0.1 | `svhc_monitor` |
+| Authorisation | substance in Annex XIV (any use) | `authorisation_required` |
+| Restriction | substance matched to an Annex XVII entry (CAS/EC join) | `restriction_flagged` + entry condition text quoted |
+| Clean | no hits | `no_action` |
+
+Dropped from v1: registration tiers (1t/10t/100t) — REACH registration
+tonnage is per substance per manufacturer, aggregated across products; it is
+not derivable from a product BOM row. Stated in the report as out of scope.
+
+Stated simplifications (must appear in the report footer and the post):
+SVHC duty assumed for articles only; Annex XIV grandfathering/exemptions not
+evaluated; Annex XVII use-specific conditions quoted, not evaluated.
 
 ## 4. Data
 
 - `data/reach.db` (SQLite): substances, svhc_entries, annex14_entries,
-  annex17_entries — done
-- C&L inventory: DEFERRED from POC (7M rows; classification/labeling answers
-  are out of scope). Report states scope: SVHC + XIV + XVII.
-- PubChem PUG-REST: training-time only (label generation + validation).
-  Not a runtime dependency of the demo.
-- Demo BOM: 8–12 substances, curated: 2 confirmed SVHCs (one above, one below
-  0.1%), 1 Annex XIV, 1–2 Annex XVII, several clean negatives, 1 ambiguous
-  name to demonstrate the needs_review path.
+  annex17_entries — ingested. Schema documented in §8.2.
+- ECHA list versions pinned in `data/VERSIONS.md` (download date + list
+  version); citation date = entry's list date field, not ingest date
+- C&L inventory: DEFERRED (out of POC scope; report states scope
+  SVHC + XIV + XVII)
+- PubChem PUG-REST: training-time only (label generation + validation)
+- Demo BOM (`demos/bom_demo.csv`): 8–12 substances — 2 SVHC (one >0.1%,
+  one ≤0.1%), 1 Annex XIV, 1–2 Annex XVII, several clean negatives,
+  1 named ambiguous substance to demonstrate needs_review (name chosen at
+  build time from the >1-match set, recorded in the BOM comment)
 
 ## 5. Training and serving
 
 - LoRA r=16, alpha=32, Unsloth, Qwen3 4B, RTX 3090
-- JSONL instruction format, both tasks, single adapter
-- Export GGUF Q8_0; serve with llama-server on RTX 1660, ctx 8K
-- ~2–5K training examples target (generated, validated, deduplicated)
+- GGUF Q8_0 (~4.3GB); Q6_K fallback if KV pressure appears
+- Serve: llama-server on RTX 1660 (dedicated), **ctx 8K** (16K does not fit
+  in 6GB — the brief's "8–16K" is corrected to 8K), `--jinja`,
+  **thinking mode OFF** (latency + JSON reliability)
+- **Gate G1 (end of build step 3):** server starts on the 1660 with 8K ctx;
+  measured VRAM recorded; 100 test resolutions run clean. If it does not
+  fit: Q6_K, then the claim's hardware line changes.
 
-## 6. Known weak points (stated up front)
+## 6. Known weak points (stated up front, repeated in the post)
 
-1. Annex XVII entries have use-specific conditions the POC does not evaluate —
-   it flags the entry and quotes the condition text; the human decides.
-2. Trade names (e.g. "TioXide 5100") are out of the demo BOM; the resolver
-   will abstain on them, which is the designed behavior.
-3. The obligation classifier is evaluated on curated inputs; its accuracy
-   number is a curated-set number. The report and the post must say so.
-4. One fine-tune, two tasks — task interference is a real risk; if Task B
-   degrades Task A in eval, Task B drops out and the 4B ships with
-   resolution only.
+1. Annex XVII entries have use-specific conditions the POC does not evaluate
+   — it flags the entry and quotes the condition text; the human decides.
+2. Trade names are out of the demo BOM; the resolver abstains on them by
+   design.
+3. The accuracy number is a curated-set number (human-verified, n=200).
+4. Registration tiers, C&L classification, and mixture rules are out of
+   scope.
+5. One adapter, one task — no task-interference risk in the POC (Task B
+   dropped; it returns as a stretch goal with its own eval).
 
 ## 7. Eval harness
 
-- `eval/run_eval.py`: runs a held-out set (≥200 resolution items, ≥100
-  obligation items) against (a) fine-tuned 4B on 1660, (b) cloud big LLM
-- outputs: accuracy, abstention calibration, cost-per-1k-calls,
-  latency-per-1k, disagreement log
-- the three-number table (accuracy / cost / latency) goes in the README, the
-  Substack post, and the video
+- `eval/run_eval.py`: held-out set (200 human-verified resolution items)
+  against (a) fine-tuned 4B on 1660, (b) the named cloud model
+- protocol: warm server, 3 runs, median; cloud model temperature pinned in
+  config; both models given identical prompts
+- outputs: exact-match accuracy + 95% CI, per-band calibration table,
+  cost-per-1k, latency-per-1k, disagreement log (`eval/disagreements.jsonl`)
+- cost methodology (locked): local = electricity only (measured wall draw ×
+  $/kWh, tariff stated); hardware amortization shown as a separate optional
+  line; cloud = named model list price × measured avg tokens/call
+- **bar and fallback:** if the 4B misses the §1 bar → shrink the public
+  claim to the measured number (the post reports the real table either way);
+  one retrain attempt allowed before shrinking
 
-## 8. Repo layout (target)
+## 8. Repo and reproducibility
+
+### 8.1 Layout
 
 ```
 src/reach/          pipeline package (resolve, check, obligations, report, cli)
-data/               ECHA CSVs + reach.db
-eval/               eval harness + held-out sets
+src/reach/data/     ingest.py, fetch_echa.py (existing scripts move here)
+data/               ECHA CSVs + reach.db + VERSIONS.md
+eval/               harness + held-out sets + disagreements
 finetune/           data generation, LoRA script, GGUF export
-docs/               use-case docs + this design
+docs/               use-case docs + this design + review reports
 demos/              demo BOM + sample report
+tests/              unit tests for rules + golden report test
 ```
+
+`debug_echa.py` deleted before the repo goes public.
+
+### 8.2 Schema (documented, tested)
+
+Tables and key columns documented in `src/reach/data/SCHEMA.md`; the
+substance→Annex-XVII-entry join rule (CAS/EC) specified there; entry-id and
+date-field semantics defined there.
+
+### 8.3 Reproducibility scope (locked)
+
+- "Clean clone → `make demo`" = the cited report, using the committed
+  reach.db + the GGUF shipped as a **GitHub release asset** (not git, not LFS)
+  + `--resolver stub` (no GPU needed for the stub path; GPU path documented)
+- reproducing the eval numbers requires the 1660 (or any 6GB+ card) + the
+  release GGUF + the cloud API key
+- reproducing the fine-tune requires the 3090 + `finetune/` scripts
+- pinned: Python version, dependency manifest, llama.cpp version, exact
+  serve command in README
 
 ## 9. Build order
 
-1. Deterministic core: check.py + obligations.py + report.py on the demo BOM
-   with a stub resolver (pre-verified IDs) → first correct cited report
-2. Data generation for Task A (PubChem + big-LLM teacher + validation)
-3. Fine-tune Task A, export, serve on 1660
-4. resolve.py against llama-server; end-to-end run
-5. Eval harness; three-number table
-6. Task B (only if Task A eval is clean)
-7. Demo video + post
+1. Deterministic core: check.py + obligations.py + report.py + tests
+   (unit tests for every §3.3 rule; golden test: demo BOM in → expected
+   JSON report diffed out) with `--resolver stub` → first correct cited report
+2. Data generation for Task A (split-first; abstention mix; spot-check)
+3. Fine-tune, export GGUF, serve on 1660 → **gate G1**
+4. resolve.py against llama-server; end-to-end run on the demo BOM
+5. Eval harness; three-number table; bar check (§7.4)
+6. (Stretch) Task B obligation labels + summary-line model — only if step 5
+   is clean and time allows
+7. List-diff script (new-SVHC → affected-BOM rows) — the monitoring story
+8. Demo video + Substack + LinkedIn
+
+## 10. Decisions needing user sign-off
+
+- **D1 — name the cloud reference model** (teacher + judge + cost
+  comparator). Must be one model, named in README/eval config. Elephant
+  proposal: the model already in your Google AI stack; confirm which.
+- **D2 — confirm the bar**: ≥90% exact-match, within 5pts of the cloud
+  model, n=200, CIs reported. (Goldfish-forced; was never stated.)
+- **D3 — confirm Task B cut** from POC scope (stretch only). The public
+  claim becomes "4B resolves names; Python computes obligations."
+- **D4 — confirm registration-tier drop** (domain error: tonnage is
+  per-substance-per-manufacturer, not per-BOM-row).
+
+## Glossary (for the post; kept short here)
+
+- **REACH** — EU chemical regulation (Registration, Evaluation,
+  Authorisation, Restriction of CHemicals)
+- **ECHA** — European Chemicals Agency, which maintains the lists
+- **SVHC / Candidate List** — Substances of Very High Concern; >0.1% in an
+  article triggers communication duties
+- **Annex XIV** — substances requiring authorisation before use
+- **Annex XVII** — substances restricted under specific conditions
+- **C&L inventory** — classification & labelling database (deferred)
+- **EC / CAS number** — canonical substance identifiers (EU / US)
+- **BOM** — Bill of Materials: substance, concentration, volume
+- **article** — a finished object (vs a substance or mixture)
+- **GGUF / Q8_0** — quantized model format / 8-bit quantization
+- **LoRA** — low-rank fine-tuning adapter

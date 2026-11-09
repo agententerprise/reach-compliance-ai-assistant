@@ -6,10 +6,11 @@
 
 A proof-of-concept that demonstrates one specific claim:
 
-> A fine-tuned 4B model, running on a 6GB on-prem GPU, handles the narrow
-> language tasks of REACH chemical compliance (substance name → canonical ID,
-> obligation classification) at accuracy close to a cloud big LLM, at a
-> fraction of the cost and latency.
+> A fine-tuned 4B model, running on a 6GB on-prem GPU, resolves substance
+> names to canonical IDs at accuracy within a stated margin of a cloud big
+> LLM, at a fraction of the cost and latency. (Obligation classification by
+> the model was cut from POC scope after Goldfish review — obligations are
+> computed by deterministic code; see design doc v2, §3.)
 
 The POC is a **showcase asset**, not a product. The deliverables are:
 
@@ -37,16 +38,16 @@ the exact list entries, and items flagged for human review.
 
 | Component | Does | Does NOT do |
 |---|---|---|
-| Fine-tuned Qwen3 4B (GGUF Q8_0, llama-server on 1660) | name → EC/CAS resolution; (substance, conc, volume, use) → obligation label | threshold math, list lookup, report assembly, orchestration |
-| Deterministic Python | SQLite list lookup, threshold math (0.1% SVHC, 1t/10t/100t tiers), report assembly, validation | any language understanding |
-| Cloud big LLM | generates training labels (teacher); eval reference (judge); fallback for low-confidence resolutions | nothing at runtime in the demo path |
+| Fine-tuned Qwen3 4B (GGUF Q8_0, llama-server on 1660) | name → EC/CAS resolution (with confidence/abstention) | threshold math, list lookup, report assembly, orchestration, obligation labels |
+| Deterministic Python | SQLite list lookup, threshold rules (0.1% SVHC, Annex XIV, Annex XVII flag), report assembly, validation | any language understanding |
+| Cloud big LLM | generates training labels (teacher); eval reference (judge) | nothing at runtime in the demo path (low confidence → needs_review, no cloud call) |
 
 ## Locked configuration (from prior sessions)
 
 - Base model: Qwen3 4B (text)
 - Fine-tune: LoRA r=16, alpha=32, Unsloth, on RTX 3090 (24GB)
 - Export: GGUF Q8_0 (~4.3GB); Q6_K fallback
-- Serve: llama.cpp `llama-server` on RTX 1660 (6GB), 8–16K context
+- Serve: llama.cpp `llama-server` on RTX 1660 (6GB), 8K context (16K does not fit in 6GB), thinking mode off
 - Training data: JSONL instruction format; cloud big LLM as teacher; labels
   validated against the ECHA lists
 - Eval: fine-tuned 4B (1660) vs cloud big LLM → accuracy / cost-per-1k /
@@ -64,19 +65,10 @@ the exact list entries, and items flagged for human review.
 
 ## Open questions (for Goldfish attack)
 
-1. **Confidence policy**: when name→ID is ambiguous, does the system abstain
-   ("needs review") or always answer? Working assumption: abstention is a
-   feature — a compliance tool that flags low-confidence resolutions is more
-   credible than one that always cites.
-2. **Annex XVII scope**: restrictions are per-entry with complex conditions
-   (use-specific limits, not just concentration). Can a 4B obligation
-   classifier handle Annex XVII entries honestly, or does Annex XVII stay
-   "flag for human review" in the POC?
-3. **C&L inventory**: 7M rows. Include in POC (full classification/labeling
-   answers) or defer (POC covers SVHC + XIV + XVII only)?
-4. **PubChem at runtime**: the docs say PubChem PUG-REST for resolution. But
-   the fine-tuned 4B is *supposed* to do name→ID. Is PubChem a training-time
-   label source, a runtime fallback, or both?
-5. **What "matches the big LLM" means in eval**: on what task set, what
-   accuracy bar, and is the bar "within X points" or "statistically
-   indistinguishable"?
+All five resolved in design v2 (docs/designs/reach-compliance-copilot.md):
+1. Confidence: low → needs_review; abstention is a trained, evaluated feature
+2. Annex XVII: flag + quote condition text; human decides
+3. C&L: deferred (POC = SVHC + XIV + XVII)
+4. PubChem: training-time only
+5. Eval bar: ≥90% exact-match, within 5pts of named cloud model, n=200,
+   CIs reported — pending user sign-off (design §10)
