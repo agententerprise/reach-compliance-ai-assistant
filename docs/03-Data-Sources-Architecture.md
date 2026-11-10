@@ -67,7 +67,7 @@
 ## Tech Stack (suggested)
 
 - **Language:** Python
-- **Agent framework:** LangGraph / CrewAI / custom loop
+- **Agent framework:** PydanticAI
 - **LLM:** GPT-4 / Claude / local (for ID resolution + reasoning)
 - **Database:** SQLite (dev) → Postgres (prod)
 - **Data ingestion:** Python scripts to download + parse ECHA CSVs
