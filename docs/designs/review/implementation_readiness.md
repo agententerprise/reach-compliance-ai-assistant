@@ -1,7 +1,7 @@
 # Goldfish Review — Implementation Readiness
 
 *Reviewer: Implementation Readiness Goldfish (EGM). Mode: REVIEW.
-Inputs: `concepts_brief.md`, `docs/designs/reach-compliance-copilot.md` (DRAFT).
+Inputs: `concepts_brief.md`, `docs/designs/reach-compliance-ai-assistant.md` (DRAFT).
 Zero prior context. Read-only audit.*
 
 ## Summary

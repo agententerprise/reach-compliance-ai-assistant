@@ -1,4 +1,4 @@
-# REACH Compliance Copilot — Use Case Overview
+# REACH Compliance - AI Assistant — Use Case Overview
 
 ## One-Sentence Pitch
 

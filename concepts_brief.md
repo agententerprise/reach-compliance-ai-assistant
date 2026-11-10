@@ -1,4 +1,4 @@
-# Concepts Brief — REACH Compliance Copilot POC
+# Concepts Brief — REACH Compliance - AI Assistant POC
 
 *EGM brainstorm output. Elephant: pi session (Nov 10). Status: draft for Goldfish review.*
 
@@ -14,7 +14,7 @@ A proof-of-concept that demonstrates one specific claim:
 
 The POC is a **showcase asset**, not a product. The deliverables are:
 
-1. A public GitHub repo (`agententerprise/reach-compliance-copilot`) with a working end-to-end pipeline
+1. A public GitHub repo (`agententerprise/reach-compliance-ai-assistant`) with a working end-to-end pipeline
 2. A Substack post
 3. A LinkedIn post
 4. A short demo video
@@ -67,7 +67,7 @@ the exact list entries, and items flagged for human review.
 
 ## Open questions (for Goldfish attack)
 
-All five resolved in design v2 (docs/designs/reach-compliance-copilot.md):
+All five resolved in design v2 (docs/designs/reach-compliance-ai-assistant.md):
 1. Confidence: low → needs_review; abstention is a trained, evaluated feature
 2. Annex XVII: flag + quote condition text; human decides
 3. C&L: deferred (POC = SVHC + XIV + XVII)

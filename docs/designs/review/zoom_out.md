@@ -1,7 +1,7 @@
-# Zoom-Out Review — REACH Compliance Copilot POC
+# Zoom-Out Review — REACH Compliance - AI Assistant POC
 
 *Goldfish: Skeptical Architect (zoom_out). Inputs: `concepts_brief.md`,
-`docs/designs/reach-compliance-copilot.md`. Mode: REVIEW.*
+`docs/designs/reach-compliance-ai-assistant.md`. Mode: REVIEW.*
 
 ## Overall
 

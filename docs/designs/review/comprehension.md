@@ -1,6 +1,6 @@
 # Goldfish Review — Comprehension (Naive Reader)
 
-*Target: `docs/designs/reach-compliance-copilot.md` (DRAFT) + `concepts_brief.md`
+*Target: `docs/designs/reach-compliance-ai-assistant.md` (DRAFT) + `concepts_brief.md`
 Reviewer: Comprehension Goldfish (EGM). Zero prior context. Read-only audit.*
 
 I read both documents as a fresh team member with no REACH, no LLM fine-tuning,

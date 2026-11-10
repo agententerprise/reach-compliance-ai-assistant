@@ -1,6 +1,6 @@
-# Design Critic Review — REACH Compliance Copilot POC
+# Design Critic Review — REACH Compliance - AI Assistant POC
 
-*Goldfish: design_critic. Mode: REVIEW. Inputs: `concepts_brief.md`, `docs/designs/reach-compliance-copilot.md`. No prior context.*
+*Goldfish: design_critic. Mode: REVIEW. Inputs: `concepts_brief.md`, `docs/designs/reach-compliance-ai-assistant.md`. No prior context.*
 
 ## Summary
 

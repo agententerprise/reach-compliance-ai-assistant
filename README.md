@@ -1,4 +1,4 @@
-# REACH Compliance Copilot
+# REACH Compliance - AI Assistant
 
 > Turn a days-long, error-prone manual regulatory cross-check into a seconds-long, auditable process — and catch new REACH obligations before they become fines. **100% local: two GPUs, no cloud.**
 

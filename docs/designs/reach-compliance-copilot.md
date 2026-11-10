@@ -1,4 +1,4 @@
-# Design — REACH Compliance Copilot POC (v2, post-Goldfish)
+# Design — REACH Compliance - AI Assistant POC (v2, post-Goldfish)
 
 *EGM design draft v2. Elephant: pi session (Nov 10). Revised after 4-way
 Goldfish review (docs/designs/review/). Status: DRAFT v2 — pending user
