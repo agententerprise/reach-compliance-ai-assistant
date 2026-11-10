@@ -10,16 +10,23 @@ Build a working end-to-end REACH compliance check that proves, with numbers:
 
 - a fine-tuned Qwen3 4B on a 6GB card resolves substance names to canonical
   EC numbers at **≥90% exact-match accuracy on a human-verified held-out set
-  (n=200), within 5 points of the named cloud reference model on the same
+  (n=200), within 5 points of the local 27B reference model on the same
   set**, with 95% confidence intervals reported for both,
-- at a measurable fraction of the cloud cost and latency (methodology in §7),
+- at lower latency and power per 1k calls than the 27B on the 3090
+  (methodology in §7),
 - with the deterministic parts (list lookup, threshold rules, report) exact,
-  unit-tested, and citable.
+  unit-tested, and citable,
+- with **zero cloud dependency** — every LLM call in the system (training
+  labels, eval, runtime) is local.
 
 The claim, stated once and used everywhere (README, post, video):
 
 > "The 4B resolves substance names. Python computes the obligations. The
-> eval proves the resolution number."
+> eval proves the resolution number. Everything runs on two local GPUs —
+> no cloud."
+
+Hardware map (locked): 3090 (24GB) serves the Qwen 27B teacher/judge and
+performs the LoRA fine-tune; 1660 (6GB) serves the fine-tuned 4B Q8_0.
 
 Obligation classification by the model is OUT of scope (was Task B; see §3).
 
@@ -89,7 +96,8 @@ BOM CSV contract: header `name,conc_pct,volume_t,use`; `use` ∈
 
 - name sources: ECHA synonym columns + PubChem synonyms, with a stated noise
   model (typo injection rate, casing, "EC-number-in-name" variants)
-- teacher: the named cloud model (§10 D1) generates labels
+- teacher: the local Qwen 27B (ATX-Swift IQ4_XS, llama-server on the 3090)
+  generates labels
 - validation: emitted EC/CAS must exist in ECHA data or PubChem (existence
   gate) PLUS a human spot-check of 10% of labels; measured label accuracy is
   reported in the README
@@ -157,14 +165,19 @@ evaluated; Annex XVII use-specific conditions quoted, not evaluated.
 ## 7. Eval harness
 
 - `eval/run_eval.py`: held-out set (200 human-verified resolution items)
-  against (a) fine-tuned 4B on 1660, (b) the named cloud model
-- protocol: warm server, 3 runs, median; cloud model temperature pinned in
-  config; both models given identical prompts
-- outputs: exact-match accuracy + 95% CI, per-band calibration table,
-  cost-per-1k, latency-per-1k, disagreement log (`eval/disagreements.jsonl`)
-- cost methodology (locked): local = electricity only (measured wall draw ×
-  $/kWh, tariff stated); hardware amortization shown as a separate optional
-  line; cloud = named model list price × measured avg tokens/call
+  against (a) fine-tuned 4B on 1660, (b) Qwen 27B on 3090 — both scored
+  against the human-verified ground truth (this breaks the teacher=judge
+  circularity: the 27B is measured too, not assumed perfect)
+- protocol: warm server, 3 runs, median; temperature pinned in config for
+  both; identical prompts
+- outputs: exact-match accuracy + 95% CI (both models), per-band calibration
+  table, latency-per-1k, power-per-1k, disagreement log
+  (`eval/disagreements.jsonl`)
+- cost methodology (locked, all-local): measured wall power draw per model
+  (W) × time-per-1k-calls × $/kWh (tariff stated); hardware amortization
+  shown as a separate optional line (1660 vs 3090 purchase price over a
+  stated lifetime). The business point: the narrow task moves to the 6GB
+  card, leaving the 3090/27B free for everything else
 - **bar and fallback:** if the 4B misses the §1 bar → shrink the public
   claim to the measured number (the post reports the real table either way);
   one retrain attempt allowed before shrinking
@@ -219,11 +232,11 @@ date-field semantics defined there.
 
 ## 10. Decisions needing user sign-off
 
-- **D1 — name the cloud reference model** (teacher + judge + cost
-  comparator). Must be one model, named in README/eval config. Elephant
-  proposal: the model already in your Google AI stack; confirm which.
-- **D2 — confirm the bar**: ≥90% exact-match, within 5pts of the cloud
-  model, n=200, CIs reported. (Goldfish-forced; was never stated.)
+- **D1 — RESOLVED (user, Nov 10):** all LLM usage is local. Teacher +
+  judge + reference = Qwen 27B (ATX-Swift IQ4_XS) on the 3090. No cloud
+  anywhere in the system.
+- **D2 — confirm the bar**: ≥90% exact-match, within 5pts of the 27B,
+  n=200, CIs reported. (Goldfish-forced; was never stated.)
 - **D3 — confirm Task B cut** from POC scope (stretch only). The public
   claim becomes "4B resolves names; Python computes obligations."
 - **D4 — confirm registration-tier drop** (domain error: tonnage is

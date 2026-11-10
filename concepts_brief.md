@@ -48,10 +48,12 @@ the exact list entries, and items flagged for human review.
 - Fine-tune: LoRA r=16, alpha=32, Unsloth, on RTX 3090 (24GB)
 - Export: GGUF Q8_0 (~4.3GB); Q6_K fallback
 - Serve: llama.cpp `llama-server` on RTX 1660 (6GB), 8K context (16K does not fit in 6GB), thinking mode off
-- Training data: JSONL instruction format; cloud big LLM as teacher; labels
-  validated against the ECHA lists
-- Eval: fine-tuned 4B (1660) vs cloud big LLM → accuracy / cost-per-1k /
-  latency-per-1k table
+- **All LLM usage is local (user-locked, Nov 10):** Qwen 27B (ATX-Swift
+  IQ4_XS) on the 3090 is teacher + judge; no cloud anywhere
+- Training data: JSONL instruction format; 27B as teacher; labels validated
+  against the ECHA lists
+- Eval: fine-tuned 4B (1660) vs 27B (3090), both vs human-verified ground
+  truth → accuracy / latency-per-1k / power-per-1k table
 - Showcase principle: bounded input structure (BOM/SDS) → clean, reliable
   accuracy number
 
