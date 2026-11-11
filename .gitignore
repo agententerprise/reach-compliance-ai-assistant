@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Models & training artifacts (too big for git — use HF Hub / GGUF releases)
+finetune/models/
+finetune/checkpoints/
+finetune/unsloth_compiled_cache/
+*.safetensors
+*.gguf
+
+# Data: keep the ECHA source CSVs + reach.db, ignore generated training sets
+# (regenerate with generate_data.py)
+finetune/data/train.jsonl
+finetune/data/train_verified.jsonl
+
+# OS
+.DS_Store
